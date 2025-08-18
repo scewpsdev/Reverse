@@ -6,6 +6,11 @@ public class PlayerCamera : Camera
 	public float sensitivity = 0.002f;
 
 
+	public PlayerCamera()
+	{
+		far = 40;
+	}
+
 	public override void init()
 	{
 		yaw = rotation.eulers.y;
