@@ -3,170 +3,90 @@ $input v_texcoord0
 #include "../common/common.shader"
 
 
-//#define KERNEL_SIZE 64
-//#define SSAO_RADIUS 1.0
-//#define SSAO_POWER 2.0
-//#define DEPTH_BIAS 0.000001
-
-
 SAMPLER2D(s_depthBuffer, 0);
 SAMPLER2D(s_normalBuffer, 1);
+SAMPLER2D(s_lastAO, 2);
 
-//uniform vec4 u_ssaoKernel[KERNEL_SIZE];
-SAMPLER2D(s_noise, 2);
+SAMPLER2D(s_noise, 3);
 
 uniform vec4 u_cameraFrustum;
 uniform mat4 u_viewMatrix;
-uniform mat4 u_viewInv;
 uniform mat4 u_projectionInv;
-uniform mat4 u_projectionView;
-uniform mat4 u_projectionViewInv;
 
-
-#define FK(k) floatBitsToInt(cos(k))^floatBitsToInt(k)
-float hash(float a, float b)
-{
-    int x = FK(a);
-    int y = FK(b);
-    return float((x * x + y) * (y * y - x) + x) / 2.14e9;
-}
-
-vec3 randvec(float seed)
-{
-    float h1 = hash(seed, seed);
-    float h2 = hash(h1, seed);
-    float h3 = hash(h2, seed);
-    return vec3(h1, h2, h3);
-}
-
-float rand(float seed)
-{
-    return hash(seed, seed);
-}
-
-/*
-void main_()
-{
-	float near = u_cameraFrustum[0];
-	float far = u_cameraFrustum[1];
-
-	float depth = texture2DLod(s_depthBuffer, v_texcoord0, 0.0).r;
-	float distance = depthToDistance(depth, near, far);
-	vec3 positionClipSpace = vec3(v_texcoord0.x * 2.0 - 1.0, v_texcoord0.y * -2.0 + 1.0, depth);
-	vec3 position = clipToWorld(u_projectionViewInv, positionClipSpace);
-	//vec3 position = texture2DLod(s_positionBuffer, v_texcoord0, 0.0).xyz;
-	//vec3 viewSpacePos = mul(u_viewMatrix, vec4(position, 1.0)).xyz;
-
-	vec3 normal = normalize(texture2D(s_normalBuffer, v_texcoord0).xyz * 2.0 - 1.0);
-	//vec3 randomVector = normalize(vec3(texture2D(s_ssaoNoise, v_texcoord0 / (u_viewTexel.xy * 4.0)).xy * 2.0 - 1.0, 0.0));
-	vec2 fragmentCoord = v_texcoord0 * u_viewRect.zw;
-	float fragmentID = fragmentCoord.x + fragmentCoord.y * u_viewRect.z;
-	float angle = rand(fragmentID);
-	vec3 randomVector = vec3(cos(angle), 0.0, -sin(angle));
-	//vec3 randomVector = normalize(vec3(randvec(hash(fragmentID, -fragmentID)).xy, 0.0));
-
-	vec3 tangent = normalize(randomVector - normal * dot(randomVector, normal));
-	vec3 bitangent = cross(normal, tangent);
-	mat3 tbn = mat3(
-		tangent.x, bitangent.x, normal.x,
-		tangent.y, bitangent.y, normal.y,
-		tangent.z, bitangent.z, normal.z
-	);
-
-	//float lodLevel = log(min(-positionViewSpace.z / 16.0, 1.0)) / log(0.5);
-	//float radius = min(distance / 5.0, 1.0);
-	float radius = SSAO_RADIUS;
-
-	float occlusion = 0.0;
-	for (int i = 0; i < KERNEL_SIZE; i++)
-	{
-		vec3 samplePos = position + mul(tbn, u_ssaoKernel[i].xyz) * radius;
-		//vec3 samplePosView = mul(u_viewMatrix, vec4(samplePos, 1.0)).xyz;
-
-		vec4 samplePosClipSpace = mul(u_projectionView, vec4(samplePos, 1.0));
-		samplePosClipSpace.xyz /= samplePosClipSpace.w;
-
-		vec2 samplePosTexCoord = vec2(samplePosClipSpace.x * 0.5 + 0.5, -samplePosClipSpace.y * 0.5 + 0.5);
-
-		float surfaceDepth = texture2DLod(s_depthBuffer, samplePosTexCoord, 0.0).r;
-		float surfaceDistance = depthToDistance(surfaceDepth, near, far);
-		//vec3 surfacePosition = texture2DLod(s_positionBuffer, samplePosTexCoord, 0.0).xyz;
-		//vec3 surfacePositionView = mul(u_viewMatrix, vec4(surfacePosition, 1.0)).xyz;
-
-		float rangeCheck = smoothstep(0.0, 1.0, 0.1 * radius / abs(distance - surfaceDistance));
-		occlusion += (surfaceDepth < samplePosClipSpace.z - DEPTH_BIAS ? 1.0 : 0.0) * rangeCheck;
-	}
-	occlusion *= 1.0 / KERNEL_SIZE;
-
-	float shading = pow(1.0 - occlusion, SSAO_POWER);
-	gl_FragColor = vec4(1.0 - shading, 1.0, 1.0, 1.0);
-	//gl_FragColor = vec4(float(int(lodLevel + 0.5)) / 4.0, 1.0, 1.0, 1.0);
-}
-*/
+uniform vec4 u_params;
+#define u_idx u_params[0]
+#define u_lod u_params[1]
+#define u_width u_params[2]
+#define u_height u_params[3]
+#define u_size u_params.zw
+uniform vec4 u_params2;
+#define u_finestLod u_params2[0]
 
 
 // https://www.shadertoy.com/view/Ms33WB
 
 
-#define SAMPLES 16
+#define SAMPLES 6
 #define INTENSITY 2
 #define SCALE 2.5
 #define BIAS 0.05
-#define SAMPLE_RAD 0.1
-#define MAX_DISTANCE 0.5
+#define SAMPLE_RAD 0.02
+#define MAX_DISTANCE 0.025
 
-#define MOD3 vec3(.1031,.11369,.13787)
 
-float hash12(vec2 p)
+float getDistance(vec2 uv)
 {
-    vec3 p3 = fract(vec3(p.xyx) * MOD3);
-    p3 += dot(p3, p3.yzx + 19.19);
-    return fract((p3.x + p3.y) * p3.z);
+    float near = u_cameraFrustum[0];
+    float far = u_cameraFrustum[1];
+    float depth = texture2DLod(s_depthBuffer, uv, u_lod).r;
+    float dist = depthToDistance(depth, near, far);
+    return dist;
 }
 
-vec2 hash22(vec2 p)
+float getDistanceLod(vec2 uv, float lod)
 {
-    vec3 p3 = fract(vec3(p.xyx) * MOD3);
-    p3 += dot(p3, p3.yzx + 19.19);
-    return fract(vec2((p3.x + p3.y) * p3.z, (p3.x + p3.z) * p3.y));
+    float near = u_cameraFrustum[0];
+    float far = u_cameraFrustum[1];
+    float depth = texture2DLod(s_depthBuffer, uv, lod).r;
+    float dist = depthToDistance(depth, near, far);
+    return dist;
 }
 
 vec3 getPosition(vec2 uv)
 {
-    float near = u_cameraFrustum[0];
-    float far = u_cameraFrustum[1];
+    float depth = texture2DLod(s_depthBuffer, uv, u_lod).r;
+    vec4 positionClipSpace = vec4(uv.x * 2 - 1, uv.y * -2 + 1, depth, 1);
+    vec4 positionViewSpace = mul(u_projectionInv, positionClipSpace);
+    positionViewSpace.xyz /= positionViewSpace.w;
 
-    float depth = texture2DLod(s_depthBuffer, uv, 2.0).r;
-    float distance = depthToDistance(depth, near, far);
-    vec3 positionClipSpace = vec3(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth);
-    vec3 positionViewSpace = clipToWorld(u_projectionInv, positionClipSpace);
-	//vec3 position = clipToWorld(u_projectionViewInv, positionClipSpace);
-
-    return positionViewSpace * 0.1;
+    return positionViewSpace.xyz;
 }
 
 vec3 getNormal(vec2 uv)
 {
-    vec3 normal = normalize(texture2D( s_normalBuffer, uv).xyz * 2.0 - 1.0);
-    vec3 normalViewSpace = mul(u_viewMatrix, vec4(normal, 0.0)).xyz;
-	//vec3 normalViewSpace = normalize(mul(u_viewMatrix, vec4(normal, 0.0)).xyz);
-    return normalViewSpace;
+    // TODO normalize in downsampling step
+    vec3 normal = normalize(texture2DLod(s_normalBuffer, uv, u_lod).xyz * 2.0 - 1.0);
+    //vec3 normalViewSpace = mul(u_viewMatrix, vec4(normal, 0.0)).xyz;
+    //return normalViewSpace;
+    return normal;
 }
 
-vec2 getRandom(vec2 uv)
+vec3 getNormalLod(vec2 uv, float lod)
 {
-    return normalize(hash22(uv * 126.1231) * 2. - 1.);
+    vec3 normal = normalize(texture2DLod(s_normalBuffer, uv, lod).xyz * 2.0 - 1.0);
+    //vec3 normalViewSpace = mul(u_viewMatrix, vec4(normal, 0.0)).xyz;
+    //return normalViewSpace;
+    return normal;
 }
-
 
 float doAmbientOcclusion(in vec2 tcoord, in vec2 uv, in vec3 p, in vec3 cnorm, float scale, inout float influence)
 {
+    uv.x *= u_viewRect.w / u_viewRect.z;
     vec3 diff = (getPosition(tcoord + uv) - p) / scale;
     float l = length(diff);
     vec3 v = diff / l;
     float d = l * SCALE;
-    float ao = max(0.0, dot(cnorm, v) - BIAS) * (1.0 / (1.0 + d / scale));
-	//ao *= smoothstep(MAX_DISTANCE, MAX_DISTANCE * 0.5, l);
+    float ao = max(0.0, dot(v, cnorm) - BIAS) * (1.0 / (1.0 + d / scale));
     influence = smoothstep(MAX_DISTANCE, MAX_DISTANCE * 0.5, diff.z);
     ao *= influence;
     return ao;
@@ -180,7 +100,7 @@ float spiralAO(vec2 uv, vec3 p, vec3 n, float scale)
     float radius = 0.;
 
     float rotatePhase = texture2D(s_noise, uv * u_viewRect.zw / textureSize(s_noise, 0)).r * 6.28;
-    float rStep = inv * SAMPLE_RAD;
+    float rStep = inv * SAMPLE_RAD * 1000.0 / u_viewRect.w;
     vec2 spiralUV;
 
     float sampleInfluence = 0.0;
@@ -198,22 +118,145 @@ float spiralAO(vec2 uv, vec3 p, vec3 n, float scale)
     return ao;
 }
 
+float computeAO(vec2 uv, vec3 position, vec3 normal)
+{
+    float maxDistance = 2;
+    int maxKernelSize = u_lod == 0 ? 2 : 5;
+
+    int kernelSize = int((u_height * maxDistance) / (2 * -position.z * 1.0 /*tan(PI * 0.25)*/));
+    kernelSize = min(kernelSize, maxKernelSize);
+
+    if (kernelSize == 0)
+        return 0;
+
+    ivec2 bufferSize = u_size / pow(2, int(u_lod + 0.5));
+
+    float sum = 0.0;
+    float ao = 0.0;
+    for (int y = -kernelSize; y <= kernelSize; y += 2)
+    {
+        for (int x = -kernelSize; x <= kernelSize; x += 2)
+        {
+            if (x == 0 && y == 0)
+                continue;
+
+            vec2 offset = vec2(x, y) / bufferSize;
+            vec3 samplePosition = getPosition(uv + offset);
+            vec3 toSample = samplePosition - position;
+            float dist = length(toSample);
+            float d = max(dot(normal, toSample / dist), 0);
+            float falloff = 1 - min(1, dist * dist / (maxDistance * maxDistance));
+
+            //vec3 sampleNormal = getNormal(uv + offset);
+            //if (dot(sampleNormal, normal) < 0.1)
+            //    ao = 1;
+
+            ao += falloff * d;
+            sum += 1;
+        }
+    }
+
+    ao /= sum;
+
+    return ao;
+}
+
+void getCoarseSample(vec2 uv, int idx, out float depth, out vec3 normal, out float sample, out float bilinearWeight)
+{
+    ivec2 bufferSize = u_size / pow(2, int(u_lod + 0.5));
+    ivec2 lastBufferSize = bufferSize / 2;
+
+    int x = idx % 2;
+    int y = idx / 2;
+
+    vec2 sampleUV = (floor(uv * lastBufferSize) + vec2(x, y)) / lastBufferSize;
+
+    depth = getDistanceLod(sampleUV, u_lod + 1);
+    normal = getNormalLod(sampleUV, u_lod + 1);
+
+    sample = texture2D(s_lastAO, sampleUV).r;
+
+    vec2 localUV = uv * lastBufferSize - floor(uv * lastBufferSize);
+
+    float bilinearX = 1 - abs(localUV.x - x);
+    float bilinearY = 1 - abs(localUV.y - y);
+    bilinearWeight = bilinearX * bilinearY;
+}
+
+float upsample(vec2 uv, float depth, vec3 normal)
+{
+    float ao = 0.0;
+    float sum = 0.0;
+    for (int i = 0; i < 4; i++)
+    {
+        float sampleDepth;
+        vec3 sampleNormal;
+        float sample;
+        float bilinearWeight;
+        getCoarseSample(uv, i, sampleDepth, sampleNormal, sample, bilinearWeight);
+
+        float tz = 16;
+        float depthWeight = pow(1.0 / (1 + abs(sampleDepth - depth)), tz);
+
+        float tn = 8;
+        float normalWeight = pow((dot(normal, sampleNormal) + 1) / 2, tn);
+
+        float weight = bilinearWeight * depthWeight * normalWeight;
+        ao += weight * sample;
+        sum += weight;
+    }
+
+    ao /= sum;
+
+    return ao;
+}
+
 void main()
 {
     vec2 uv = v_texcoord0;
 
+    float near = u_cameraFrustum[0];
+    float far = u_cameraFrustum[1];
+
+    float depth = getDistance(uv);
+    //if (depth == 1)
+    //    discard;
+
+    vec3 position = getPosition(uv);
+    vec3 normal = getNormal(uv);
+
+    float ao1 = computeAO(uv, position, normal);
+
+    float ao;
+    if (u_idx == 0)
+    {
+        ao = ao1;
+    }
+    else
+    {
+        float ao2 = upsample(uv, depth, normal);
+        float ao3 = max(ao1, ao2);
+
+        if (u_lod == u_finestLod)
+            ao = 1 - ao3;
+        else
+            ao = ao3;
+    }
+
+    gl_FragColor = vec4(vec3_splat(ao), 1.0);
+    return;
+
+
+    /*
     vec3 p = getPosition(uv);
     vec3 n = getNormal(uv);
 
-    float ao = 0.;
-	//float rad = min(SAMPLE_RAD / -p.z, SAMPLE_RAD / 0.5);
     float scale = -p.z;
 
-    ao = spiralAO(uv, p, n, scale);
-
-    ao = pow(1 - ao, INTENSITY);
-    //ao = 1. - ao;
+    float ao = spiralAO(uv, p, n, scale);
+    ao = 1 - ao;
+    //ao = pow(1 - ao, INTENSITY);
 
     gl_FragColor = vec4(ao, ao, ao, 1.0);
-	//gl_FragColor = vec4(n.y, 0.0, 0.0, 1.0);
+    */
 }

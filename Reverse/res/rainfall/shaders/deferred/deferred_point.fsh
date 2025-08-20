@@ -11,8 +11,6 @@ SAMPLER2D(s_gbuffer1, 1);
 SAMPLER2D(s_gbuffer2, 2);
 SAMPLER2D(s_gbuffer3, 3);
 
-SAMPLER2D(s_ao, 4);
-
 SAMPLERCUBESHADOW(s_shadowMap0, 5);
 SAMPLERCUBESHADOW(s_shadowMap1, 6);
 SAMPLERCUBESHADOW(s_shadowMap2, 7);
@@ -79,9 +77,6 @@ void main()
 		//else if (shadowMapID < 6.5) lightS += 0.1 * textureCube(s_shadowMap6, -view);
 		//else if (shadowMapID < 7.5) lightS += 0.1 * textureCube(s_shadowMap7, -view);
 	}
-
-	float ao = texture2D(s_ao, v_texcoord0).r;
-	lightS *= ao;
 
 	gl_FragColor = vec4(lightS, 1.0);
 }

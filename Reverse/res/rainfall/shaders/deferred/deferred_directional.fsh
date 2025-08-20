@@ -24,8 +24,6 @@ uniform mat4 u_toLightSpace0;
 uniform mat4 u_toLightSpace1;
 uniform mat4 u_toLightSpace2;
 
-SAMPLER2D(s_ao, 7);
-
 uniform vec4 u_cameraPosition;
 
 
@@ -51,11 +49,5 @@ void main()
 
 	vec3 lightS = RenderDirectionalLight(position, normal, view, distance, albedo, roughness, metallic, u_lightDirection.xyz, u_lightColor.rgb, s_shadowMap0, u_shadowMapFar0, u_toLightSpace0, s_shadowMap1, u_shadowMapFar1, u_toLightSpace1, s_shadowMap2, u_shadowMapFar2, u_toLightSpace2, gl_FragCoord);
 
-	float ao = texture2D(s_ao, v_texcoord0).r;
-	lightS *= ao;
-
 	gl_FragColor = vec4(lightS, 1.0);
-
-	//if (v_texcoord0.x > 0.75 && v_texcoord0.y > 0.75)
-	//	gl_FragColor = vec4(vec3_splat(shadow2D(s_directionalLightShadowMap0, vec3(v_texcoord0.x * 4 - 3, v_texcoord0.y * 4 - 3, u_cameraPosition.w))), 1.0);
 }

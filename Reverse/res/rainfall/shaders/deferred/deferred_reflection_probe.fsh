@@ -17,8 +17,6 @@ uniform vec4 u_reflectionPosition;
 uniform vec4 u_reflectionSize;
 uniform vec4 u_reflectionOrigin;
 
-SAMPLER2D(s_ao, 5);
-
 uniform vec4 u_cameraPosition;
 
 
@@ -45,11 +43,7 @@ void main()
 
 	vec4 lightS = RenderReflectionsParallax(position, normal, view, albedo, roughness, metallic, s_environmentMap, u_reflectionPosition, u_reflectionSize, u_reflectionOrigin);
 
-	float ao = texture2D(s_ao, v_texcoord0).r;
-	lightS *= ao;
-
 	//lightS = textureCubeLod(s_environmentMap, -view, 0).rgb;
 
 	gl_FragColor = lightS;
-	//gl_FragColor = vec4(ao, ao, ao, 1.0);
 }

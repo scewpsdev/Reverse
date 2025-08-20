@@ -26,6 +26,10 @@ public class EntryPoint : Game3D<EntryPoint>
 	{
 		base.init();
 
+		RendererSettings renderSettings = new RendererSettings(0);
+		renderSettings.ssaoQuality = 0;
+		Renderer.SetSettings(renderSettings);
+
 		pushState(new GameState());
 	}
 
@@ -36,7 +40,7 @@ public class EntryPoint : Game3D<EntryPoint>
 		launchParams.width = 1280;
 		launchParams.height = 720;
 		launchParams.fpsCap = 60;
-		launchParams.fullscreen = true;
+		//launchParams.fullscreen = true;
 #else
 		launchParams.width = 1280;
 		launchParams.height = 720;
